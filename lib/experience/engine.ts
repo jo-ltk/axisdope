@@ -207,6 +207,10 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
     unitW = w; unitPx = u;
     const arr = (w < 700 || (COARSE && w / innerHeight < 0.85)) ? SEC_M : SEC_D;
     secs.forEach((s, i) => { s.style.height = `${Math.round(arr[i] * unitPx)}px`; });
+    // when the index wall scrolls inside its frame, size its section so the wall moves exactly with
+    // the finger (1:1), then holds briefly before the next scene fades in
+    const hl = heroLayout(w, stage.clientHeight || innerHeight, 1);
+    if (hl.overflow > 0 && secs[0]) secs[0].style.height = `${Math.round(hl.overflow + (TR + 0.2) * 100 * unitPx)}px`;
     return true;
   }
   function cacheSections() {
@@ -222,9 +226,10 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
     if (moved && !force) ScrollTrigger.refresh();
     if (!force && cw === lastCW && Math.abs(ch - lastCH) < 140) return;
     lastCW = cw; lastCH = ch;
-    let p = Math.min(devicePixelRatio || 1, cw < 700 ? 1.75 : 1.5) * Q;
+    // phones: a lighter canvas keeps every scroll frame inside budget (the 2D plate is re-uploaded to WebGL each frame)
+    let p = Math.min(devicePixelRatio || 1, cw < 700 ? 1.5 : 1.5) * Q;
     p = Math.max(p, Math.min(1, devicePixelRatio || 1) * 0.8);
-    const maxPx = cw < 700 ? 1.6e6 : 3.4e6;
+    const maxPx = cw < 700 ? 1.1e6 : 3.4e6;
     if (cw * ch * p * p > maxPx) p = Math.sqrt(maxPx / (cw * ch));
     pr = p; W = Math.max(2, Math.round(cw * p)); H = Math.max(2, Math.round(ch * p));
     stage.width = W; stage.height = H;
@@ -290,21 +295,28 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
 
   /* ---------- 00: index. Twelve forms hung like a gallery wall ---------- */
   let heroT0 = -1;
+  /** grid geometry for the index wall, in device px (w, h are canvas px; k is the pixel ratio) */
+  function heroLayout(w: number, h: number, k: number) {
+    const portrait = w / h < 0.85;
+    const cols = portrait ? (innerWidth >= 600 ? 3 : 2) : (w / h < 1.25 ? 4 : 6);
+    const rows = Math.ceil(PRODUCTS.length / cols);
+    const mx0 = w * (portrait ? 0.05 : 0.035);
+    const top = portrait ? Math.max(h * 0.15, 122 * k) : Math.max(h * 0.11, 78 * k);
+    const bottom = portrait ? Math.max(h * 0.13, 104 * k) : h * 0.09;
+    const visRows = portrait ? (cols === 3 ? 4 : 3) : (cols === 4 ? 3 : 2);
+    const cw = (w - mx0 * 2) / cols, rh = (h - top - bottom) / visRows;
+    const overflow = Math.max(0, rows * rh - (h - top - bottom));
+    return { cols, mx0, top, bottom, cw, rh, overflow };
+  }
   const hov = PRODUCTS.map(() => ({ s: 1, v: 0 }));
   const heroHits: Array<{ i: number; x: number; y: number; w: number; h: number }> = [];
   function sceneHero(p: number, nowMs: number) {
     if (heroT0 < 0) heroT0 = nowMs;
     heroHits.length = 0; S.overPiece = -1;
-    const portrait = W / H < 0.85;
-    const cols = portrait ? (innerWidth >= 600 ? 3 : 2) : (W / H < 1.25 ? 4 : 6);
-    const n = PRODUCTS.length, rows = Math.ceil(n / cols);
-    const mx0 = W * (portrait ? 0.05 : 0.035);
-    const top = portrait ? Math.max(H * 0.15, 122 * pr) : Math.max(H * 0.11, 78 * pr);
-    const bottom = portrait ? Math.max(H * 0.13, 104 * pr) : H * 0.09;
-    const visRows = portrait ? (cols === 3 ? 4 : 3) : (cols === 4 ? 3 : 2);
-    const cw = (W - mx0 * 2) / cols, rh = (H - top - bottom) / visRows;
-    const overflow = Math.max(0, rows * rh - (H - top - bottom));
-    const scrollY = -p * overflow;
+    const { cols, mx0, top, bottom, cw, rh, overflow } = heroLayout(W, H, pr);
+    const n = PRODUCTS.length;
+    // the framed wall follows the page scroll pixel for pixel, like a native list
+    const scrollY = overflow > 0 ? -clamp(S.sy * pr, 0, overflow) : -p * overflow;
     const box = Math.min(cw * 0.74, rh * 0.7);
     const cs = Math.max(9.5 * pr, Math.min(H * 0.0115, 11.5 * pr));
 
@@ -664,6 +676,8 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
     if (S.wander) { S.tmx = W * 0.5; S.tmy = H * 0.5; }
     if (!(S.touching && S.swipeH)) { S.swipeOff *= Math.pow(0.93, dt * 60); S.swipeV *= Math.pow(0.9, dt * 60); }
     perfTick(dt);
+    // touch: follow the native (momentum) scroll position exactly, in step with this frame
+    if (COARSE && !S.introOn) S.sy = clamp(window.scrollY, 0, maxS);
     // inputs
     const k = 1 - Math.pow(1 - (S.wander ? 0.03 : 0.14), dt * 60);
     const pmx = S.mx, pmy = S.my;
@@ -691,7 +705,8 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
       if (introTime && introTime.textContent !== T.str) introTime.textContent = T.str;
       curScene = 0;
     } else if (st.t > 0.0005 && st.cur < SCENES.length - 1) {
-      const e = eio(st.t), a = st.cur, b = st.cur + 1;
+      // on narrow portrait screens the scenes are dense, so keep the overlap window short
+      const e = eio(W / H < 0.85 ? clamp((st.t - 0.3) / 0.4) : st.t), a = st.cur, b = st.cur + 1;
       if (b !== MAIL) S.mailT = -1;
       crossfade(() => { SCENES[a](pOf(a), now, dt); }, () => { SCENES[b](pOf(b), now, dt); }, e);
       curScene = st.t > 0.5 ? b : a;
@@ -980,9 +995,12 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
   ScrollTrigger.config({ ignoreMobileResize: true });
   resize(true);
   if (COARSE) { S.hasPointer = true; S.lastTouch = -1e9; }
+  /* Touch screens already have native momentum scrolling, so the stage reads the scroll position
+     directly every frame (see frame()). A scrub delay on top of momentum feels sticky on iOS.
+     Mouse wheels step in notches, so desktop keeps a short scrub to smooth them. */
   const scrollTween = gsap.to(S, {
     sy: () => ScrollTrigger.maxScroll(window), ease: 'none',
-    scrollTrigger: { start: 0, end: 'max', scrub: S.reduced ? true : (COARSE ? 0.5 : 0.8), invalidateOnRefresh: true },
+    scrollTrigger: { start: 0, end: 'max', scrub: (S.reduced || COARSE) ? true : 0.6, invalidateOnRefresh: true },
   });
   const onRefresh = () => cacheSections();
   ScrollTrigger.addEventListener('refresh', onRefresh);

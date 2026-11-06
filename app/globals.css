@@ -36,7 +36,7 @@ body {
 
 /* The stage starts black: the first thing drawn is Alex's original black page, which the
    intro then exposes into the white gallery. */
-.stage { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100lvh; display: block; z-index: 0; background: var(--void); }
+.stage { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100svh; display: block; z-index: 0; background: var(--void); }
 .track { position: relative; z-index: 1; }
 .sec { position: relative; width: 100%; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
