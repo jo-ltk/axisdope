@@ -1,0 +1,99 @@
+/* One fixed WebGL stage; the page scroll is only a timeline. Every pixel has a delay,
+   and the pointer is the only place where the picture is fully in the present. */
+:root {
+  --void: #050505;      /* the unexposed plate */
+  --bone: #ece8df;      /* developed silver */
+  --ash: #8b867d;       /* secondary readouts */
+  --ember: #ff4f1c;     /* the past: trails, the slit */
+  --ice: #93d0ff;       /* the arriving present */
+  --display: "Archivo", "Arial Black", Impact, sans-serif;
+  --serif: "Instrument Serif", "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  background: var(--void);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--bone);
+  overflow-x: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior-y: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+.stage { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100lvh; display: block; z-index: 0; background: var(--void); }
+.track { position: relative; z-index: 1; }
+.sec { position: relative; width: 100%; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* HUD */
+.hud {
+  position: fixed; inset: 0; pointer-events: none; z-index: 5; color: var(--bone); mix-blend-mode: difference;
+  font: 500 11px/1.45 var(--mono); letter-spacing: .09em; text-transform: uppercase; opacity: 0;
+  font-variant-numeric: tabular-nums;
+}
+.hud > div { position: absolute; display: flex; flex-direction: column; gap: 2px; }
+.hud .tl { top: calc(18px + env(safe-area-inset-top, 0px)); left: max(18px, calc(env(safe-area-inset-left, 0px) + 12px)); }
+.hud .tr { top: calc(18px + env(safe-area-inset-top, 0px)); right: max(18px, calc(env(safe-area-inset-right, 0px) + 12px)); text-align: right; align-items: flex-end; }
+.hud .bl { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); left: max(18px, calc(env(safe-area-inset-left, 0px) + 12px)); }
+.hud .br { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); right: max(18px, calc(env(safe-area-inset-right, 0px) + 12px)); align-items: flex-end; text-align: right; }
+.hud .tl b { font: 800 15px/1 var(--display); letter-spacing: .02em; }
+.hud .tl span, .hud .bl span { color: var(--ash); }
+.meter { width: 120px; height: 1px; background: color-mix(in srgb, var(--bone) 25%, transparent); margin-top: 6px; }
+.meter i { display: block; height: 100%; width: 100%; background: var(--bone); transform: scaleX(0); transform-origin: 0 50%; will-change: transform; }
+.hud .hint { left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); text-align: center; max-width: min(46vw, 420px); color: var(--bone); }
+.smear {
+  pointer-events: auto; margin-top: 8px; background: none; border: 1px solid currentColor; color: inherit;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; padding: 5px 9px; border-radius: 999px;
+}
+.smear:focus-visible, .mail:focus-visible, .again:focus-visible { outline: 2px solid var(--ember); outline-offset: 4px; }
+
+/* custom cursor (fine pointers only) */
+.cursor { position: fixed; left: 0; top: 0; z-index: 7; pointer-events: none; opacity: 0; mix-blend-mode: difference; color: var(--bone); will-change: transform; }
+.cursor i { position: absolute; left: -.5px; top: -18px; width: 1px; height: 36px; background: currentColor; }
+.cursor span { position: absolute; left: 10px; top: 8px; font: 500 10px/1 var(--mono); letter-spacing: .12em; white-space: nowrap; }
+
+/* invisible hit area laid over the drawn email address */
+.mail { position: fixed; z-index: 6; background: transparent; border: 0; color: transparent; font-size: 1px; padding: 0; margin: 0; pointer-events: none; border-radius: 4px; }
+.mail.on { pointer-events: auto; }
+.again {
+  position: fixed; z-index: 6; left: 50%; transform: translateX(-50%); bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  background: var(--bone); color: var(--void); border: 0; border-radius: 999px; padding: 11px 18px;
+  font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; opacity: 0; pointer-events: none; transition: opacity .4s;
+}
+.again.on { opacity: 1; pointer-events: auto; }
+.toast {
+  position: fixed; z-index: 8; left: 50%; top: calc(22px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -8px);
+  background: var(--ember); color: var(--void); font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  padding: 10px 14px; border-radius: 999px; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none;
+  max-width: calc(100vw - 32px); text-align: center;
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (pointer: fine) { html, body, button { cursor: none; } }
+@media (pointer: coarse) {
+  .smear { min-height: 40px; padding: 0 16px; margin-top: 10px; }
+  .again { min-height: 48px; padding: 0 24px; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 640px) {
+  .hud { font-size: 9.5px; }
+  .hud .hint { left: max(18px, calc(env(safe-area-inset-left, 0px) + 12px)); transform: none; text-align: left; max-width: 50vw; }
+  .meter { width: 72px; }
+  .hud .bl { display: none; }
+}
+@media (max-width: 360px) {
+  .hud { font-size: 9px; letter-spacing: .07em; }
+  .hud .tl b { font-size: 13px; }
+}
