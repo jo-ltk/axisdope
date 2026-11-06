@@ -1,69 +1,98 @@
-import { clamp, fbm, hash2, ss } from './math';
+import { clamp, hash2, ss } from './math';
 
 /**
  * Placeholder imagery, generated in the browser so the site ships with no image files.
- * To use real photos later, draw them into `cv` (any canvas or image of the same aspect) instead.
+ * Each plate is an isolated studio object on white paper. The functions return INK DENSITY:
+ * 0 is paper, 1 is full black.
+ *
+ * To use real photos later, draw a grayscale cut-out into `cv` instead (ink = 1 - luminance,
+ * written into the red channel when WebGL is on; see generatePlate).
  */
 export type Plate = {
   w: number;
   h: number;
-  ar: string;
-  f: (nx: number, ny: number) => number;
+  f: (nx: number, ny: number, px: number) => number;
   cv?: HTMLCanvasElement;
+};
+
+// signed distance to a box centred at (cx, cy) with half-size (hx, hy); negative inside
+const sdBox = (x: number, y: number, cx: number, cy: number, hx: number, hy: number) => {
+  const qx = Math.abs(x - cx) - hx, qy = Math.abs(y - cy) - hy;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
+};
+const fill = (d: number, px: number) => 1 - ss(-px, px, d);           // anti-aliased inside test
+const shadow = (x: number, y: number, cx: number, cy: number, rx: number, ry: number, k: number) => {
+  const e = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+  return k * Math.exp(-e * 1.6);
 };
 
 export function createPlates(): Plate[] {
   return [
-    { w: 640, h: 400, ar: '16:10', f: (nx, ny) => {            // horizon over open water
-      const hz = 0.56;
-      if (ny < hz) { const d = hz - ny; return 0.04 + 0.6 * Math.exp(-d * 9) + fbm(nx * 3 + 1, ny * 7, 4) * 0.1 * (1 - d) + Math.exp(-d * 260) * 0.5; }
-      const d = ny - hz, r = fbm(nx * 2.5, d * 42 + 3, 4);
-      const refl = Math.exp(-Math.abs(nx - 0.62) * 10) * Math.exp(-d * 3.2) * Math.pow(r, 3) * 2.2;
-      return 0.03 + r * 0.12 * Math.exp(-d * 2) + refl * 0.7 + Math.exp(-d * 220) * 0.6;
+    { w: 420, h: 560, f: (x, y, px) => {                       // monolith
+      const ground = shadow(x, y, 0.5, 0.855, 0.2, 0.022, 0.32);
+      const d = sdBox(x, y, 0.5, 0.48, 0.115, 0.365);
+      const m = fill(d, px);
+      const sheen = 0.32 * Math.exp(-(x - 0.385) * 38) + 0.08 * (1 - y);
+      return Math.max(ground, m * (0.94 - sheen));
     } },
-    { w: 400, h: 600, ar: '2:3', f: (nx, ny) => {              // falling light, long exposure
-      let v = 0.03 + fbm(nx * 2, ny * 2, 3) * 0.06 + ny * 0.07;
-      const n = 150, cI = Math.floor(nx * n);
-      if (hash2(cI, 11) > 0.76) {
-        const st = hash2(cI, 3) * 0.9 - 0.15, len = 0.12 + hash2(cI, 5) * 0.7, b = 0.25 + hash2(cI, 9) * 0.75, u = (ny - st) / len;
-        if (u > 0 && u < 1) { const fx = 1 - Math.abs((nx * n - cI) - 0.5) * 2; v += b * Math.pow(fx, 3) * Math.pow(Math.sin(u * Math.PI), 0.5) * 0.9; }
+    { w: 520, h: 520, f: (x, y, px) => {                       // orb
+      const ground = shadow(x, y, 0.5, 0.79, 0.22, 0.03, 0.3);
+      const dx = x - 0.5, dy = y - 0.45, r = 0.27, d = Math.hypot(dx, dy) - r;
+      const m = fill(d, px);
+      const nz = Math.sqrt(Math.max(0, 1 - (dx * dx + dy * dy) / (r * r)));
+      const lam = Math.max(0, (-dx / r) * 0.55 + (-dy / r) * 0.6 + nz * 0.58);
+      const rim = Math.pow(1 - nz, 3) * 0.12;
+      return Math.max(ground, m * clamp(0.95 - Math.pow(lam, 6) * 0.55 - rim));
+    } },
+    { w: 600, h: 420, f: (x, y, px) => {                       // stacked plinths
+      let v = shadow(x, y, 0.52, 0.86, 0.3, 0.03, 0.28);
+      const boxes = [[0.58, 0.42, 0.22, 0.13, 0.78], [0.54, 0.53, 0.22, 0.13, 0.86], [0.5, 0.64, 0.22, 0.13, 0.94]];
+      for (const [cx, cy, hx, hy, ink] of boxes) {
+        const d = sdBox(x, y, cx, cy, hx, hy);
+        if (d < px) {
+          const edge = ss(-0.012, -0.003, d) * 0.4;            // a hairline of light between slabs
+          v = Math.max(v * (1 - fill(d, px)), fill(d, px) * (ink - edge - 0.06 * (y - cy + hy) / (2 * hy)));
+        }
       }
       return v;
     } },
-    { w: 420, h: 560, ar: '3:4', f: (nx, ny) => {              // monolith in fog
-      const fog = 0.05 + 0.34 * Math.pow(1 - Math.abs(ny - 0.8), 7) + fbm(nx * 3, ny * 3, 4) * 0.08;
-      if (nx > 0.37 && nx < 0.63 && ny > 0.16 && ny < 0.86) return 0.015 + fbm(nx * 10, ny * 10, 3) * 0.03 + Math.exp(-(nx - 0.37) * 90) * 0.55 + Math.exp(-(ny - 0.16) * 120) * 0.22;
-      return fog + (ny > 0.86 ? 0.14 * Math.exp(-(ny - 0.86) * 6) : 0);
+    { w: 440, h: 600, f: (x, y, px) => {                       // arch
+      const ground = shadow(x, y, 0.5, 0.875, 0.26, 0.022, 0.3);
+      const ax = (x - 0.5) * 0.733;                             // aspect-correct horizontal distance
+      const outer = Math.min(sdBox(x, y, 0.5, 0.61, 0.2, 0.25), Math.hypot(ax, y - 0.36) - 0.147);
+      const inner = Math.min(sdBox(x, y, 0.5, 0.69, 0.09, 0.17), Math.hypot(ax * 1.0, y - 0.52) - 0.066);
+      const body = fill(outer, px) * (1 - fill(inner, px));
+      const depth = fill(inner, px) * (0.1 + 0.18 * ss(0.86, 0.5, y));
+      return Math.max(ground, body * (0.93 - 0.18 * Math.exp(-(x - 0.3) * 30)), depth);
     } },
-    { w: 600, h: 600, ar: '1:1', f: (nx, ny) => {              // a city grid from above, at night
-      const hz = 0.34;
-      if (ny < hz) return 0.02 + 0.26 * Math.exp(-(hz - ny) * 14);
-      const z = 0.12 / (ny - hz + 0.004), gx = (nx - 0.5) * z * 40, gz = z * 30;
-      const ix = Math.floor(gx), iz = Math.floor(gz), fx = gx - ix - 0.5, fz = gz - iz - 0.5;
-      const on = hash2(ix, iz) > 0.38 ? 1 : 0;
-      const glow = on * Math.exp(-(fx * fx + fz * fz) / (0.004 * z + 0.001));
-      return 0.015 + glow * Math.min(1, 1.6 / z) * (0.5 + 0.5 * hash2(iz, ix)) + 0.22 * Math.exp(-(ny - hz) * 16);
+    { w: 640, h: 380, f: (x, y, px) => {                       // an object in motion, long exposure
+      const k = 640 / 380, X = x * k, cx = 0.74 * k, hl = 0.1 * k, r = 0.15;   // work in height units
+      const capsule = Math.hypot(Math.max(Math.abs(X - cx) - hl, 0), y - 0.5) - r;
+      const sheen = 0.2 * ss(0.5, 0.36, y);
+      const body = fill(capsule, px * k) * (0.94 - sheen);
+      let trail = 0;
+      if (X < cx) {
+        const band = ss(r, r * 0.7, Math.abs(y - 0.5));
+        const row = Math.floor(y * 380 / 3);
+        const len = 0.45 + hash2(row, 7) * 0.65;
+        trail = band * Math.pow(Math.max(0, 1 - (cx - X) / len), 1.6) * (0.3 + 0.35 * hash2(row, 3));
+      }
+      return Math.max(shadow(x, y, 0.62, 0.84, 0.32, 0.03, 0.16), body, trail);
     } },
-    { w: 380, h: 520, ar: '19:26', f: (nx, ny) => {            // a sun through grain
-      const dx = nx - 0.52, dy = (ny - 0.4) * 1.37, d = Math.hypot(dx, dy);
-      let v = 0.05 + 0.9 * (1 - ss(0.2, 0.215, d)) + 0.45 * Math.exp(-d * 4.5);
-      v += 0.22 * Math.exp(-Math.abs((nx + ny) * 0.7 - 1.05) * 6);
-      v += (fbm(nx * 40, ny * 40, 2) - 0.5) * 0.2;
-      return v * (0.6 + 0.4 * (1 - ny));
-    } },
-    { w: 600, h: 380, ar: '30:19', f: (nx, ny) => {            // a corridor of light
-      const dx = (nx - 0.5) * 2, dy = (ny - 0.5) * 2;
-      const k = Math.max(Math.abs(dx), Math.abs(dy) / 0.63), depth = 1 / (k + 0.001), ring = Math.abs(((depth * 1.4) % 1) - 0.5);
-      let v = 0.03 + Math.exp(-k * 6) * 0.95 + (ring > 0.46 ? 0.35 * Math.min(1, k * 2) : 0);
-      v += Math.exp(-Math.abs(Math.abs(dx) - Math.abs(dy) / 0.63) * 90) * 0.25 * k;
-      if (dy > 0 && Math.abs(dy) / 0.63 > Math.abs(dx)) v += 0.08 * fbm(nx * 20, depth * 3, 3);
-      return v;
+    { w: 520, h: 520, f: (x, y, px) => {                       // ring
+      const ground = shadow(x, y, 0.5, 0.82, 0.24, 0.028, 0.28);
+      const dx = x - 0.5, dy = y - 0.46, rr = Math.hypot(dx, dy);
+      const d = Math.abs(rr - 0.22) - 0.07;
+      const m = fill(d, px);
+      const ang = Math.atan2(dy, dx);
+      const sheen = 0.42 * Math.pow(Math.max(0, Math.cos(ang + 2.2)), 6) * ss(0.07, 0, Math.abs(rr - 0.2));
+      return Math.max(ground, m * (0.93 - sheen));
     } },
   ];
 }
 
 type GenOptions = {
-  inkRed: boolean;          // WebGL path paints light into the red channel only
+  inkRed: boolean;          // WebGL path stores ink density in the red channel
   scale: number;            // phones use .72
   alive: () => boolean;
   later: (fn: () => void, ms: number) => void;
@@ -77,18 +106,19 @@ export function generatePlate(P: Plate, i: number, o: GenOptions, done: () => vo
   const cx = cv.getContext('2d');
   if (!cx) return;
   const img = cx.createImageData(w, h), D = img.data;
+  const px = 1.2 / w;
   let y = 0;
   const step = () => {
     if (!o.alive()) return;
     const t0 = performance.now();
     while (y < h && performance.now() - t0 < 6) {
       for (let x = 0; x < w; x++) {
-        let v = P.f(x / w, y / h);
-        v += (hash2(x + i * 997, y + 31) - 0.5) * 0.09;
-        v = Math.pow(clamp(v), 0.95);
+        let v = P.f(x / w, y / h, px);
+        v += (hash2(x + i * 997, y + 31) - 0.5) * 0.05 * v;      // photographic grain, only in the ink
+        v = clamp(v);
         const k = (y * w + x) * 4;
         if (o.inkRed) { D[k] = v * 255; D[k + 1] = 0; D[k + 2] = 0; }
-        else { D[k] = v * 236; D[k + 1] = v * 232; D[k + 2] = v * 223; }
+        else { const l = 255 - v * 245; D[k] = l; D[k + 1] = l; D[k + 2] = l; }
         D[k + 3] = 255;
       }
       y++;

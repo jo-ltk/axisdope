@@ -12,8 +12,8 @@ export const experienceConfig = {
   temperatureC: 13,
   email: 'alexjosephreal@gmail.com',
   coords: ['45.4215° N', '75.6972° W'] as const,
-  handle: 'axisdope',
-  note: 'Alex does not tweet',
+  /** A quiet second line under the email on the opening page; it settles in the bottom-left corner. */
+  aside: 'axisdope · Alex does not tweet',
 };
 
 export type ExperienceConfig = typeof experienceConfig;
