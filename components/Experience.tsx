@@ -43,7 +43,7 @@ export default function Experience() {
           <p className="sr">Currently in {cfg.city}.</p>
         </section>
         <section data-sec className="sec" style={{ height: '320vh' }}>
-          <p className="sr">Local time in {cfg.city}: <span data-el="srTime" /></p>
+          <p className="sr">Your local time: <span data-el="srTime" /></p>
         </section>
         <section data-sec className="sec" style={{ height: '320vh' }}>
           <p className="sr">Six placeholder images, generated in the browser.</p>

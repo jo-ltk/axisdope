@@ -64,9 +64,13 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
   const SMALL = () => innerWidth < 700;
   let Q = 1;   // dynamic resolution scale, lowered only if a phone can't hold the frame rate
 
-  /* ---------- local time ---------- */
-  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: cfg.timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' });
-  const T = { str: '00:00:00', tz: 'ET', last: -1e9 };
+  /* ---------- local time: the visitor's own clock and time zone ---------- */
+  const fmt = new Intl.DateTimeFormat('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  let tzName = '';
+  try {
+    tzName = new Intl.DateTimeFormat(navigator.language, { timeZoneName: 'short' }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value ?? '';
+  } catch { tzName = ''; }
+  const T = { str: '00:00:00', tz: tzName, last: -1e9 };
   function updTime(ms: number) {
     if (ms - T.last < 200) return;
     T.last = ms;
@@ -75,7 +79,6 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
       const g = (k: string) => parts.find(p => p.type === k)?.value ?? '';
       let h = g('hour'); if (h === '24') h = '00';
       T.str = `${h}:${g('minute')}:${g('second')}`;
-      T.tz = g('timeZoneName') || 'ET';
     } catch {
       const d = new Date(); T.str = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
@@ -350,7 +353,7 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
     const mid = H * 0.5, base = mid + asc / 2;
     const fsS = fb * 0.2, fsM = fb * 0.085, gap = fb * 0.16;
     const items: Item[] = [
-      { k: 's', s: 'currently in' }, { k: 'b', s: cfg.city.toUpperCase() }, { k: 's', s: 'where it is' },
+      { k: 's', s: 'currently in' }, { k: 'b', s: cfg.city.toUpperCase() }, { k: 's', s: 'and where you are it is' },
       { k: 't' }, { k: 'm', s: T.tz }, { k: 's', s: 'and' }, { k: 'b', s: `${S.temp}°C` }, { k: 's', s: 'in the air.' },
     ];
     items.forEach(it => {
@@ -616,7 +619,7 @@ export function mountExperience(root: HTMLElement, cfg: ExperienceConfig): () =>
     c.restore();
     if (e > 0 && e < 1) { if (S.smear) streak(scanX, 1, W * 0.3 * Math.sin(Math.PI * e), 0.9); slitLine(scanX, 1); }
     c.font = `italic ${cs * 2.2}px ${F.s}`; c.textAlign = 'right'; c.fillStyle = L(0.8);
-    c.fillText(`It is ${T.str} in ${cfg.city}.`, (W + maxw) / 2, top + blockH + cs * 3.2);
+    c.fillText(`It is ${T.str} where you are.`, (W + maxw) / 2, top + blockH + cs * 3.2);
     mono(cs, 0.55, 'right'); c.fillText(`${cfg.handle} · ${cfg.note}`.toUpperCase(), (W + maxw) / 2, top + blockH + cs * 5.6); noSpacing();
     mailRect.x = (W - maxw) / 2; mailRect.y = top; mailRect.w = maxw; mailRect.h = blockH + lh * 0.1;
     return e >= 1;

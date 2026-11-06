@@ -8,8 +8,6 @@ export const experienceConfig = {
   /** Shown in the original-page homage at the start and in the HUD labels. */
   displayName: 'Alex',
   city: 'Ottawa',
-  /** IANA time zone used for the live clock. */
-  timeZone: 'America/Toronto',
   /** Fixed reading from the original page. */
   temperatureC: 13,
   email: 'alexjosephreal@gmail.com',
